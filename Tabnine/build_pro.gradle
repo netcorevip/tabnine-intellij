@@ -1,0 +1,133 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.stream.Collectors
+
+plugins {
+    id 'java'
+    id "org.jetbrains.kotlin.jvm" version "1.4.32"
+    id 'org.jetbrains.intellij' version '1.13.3'
+    id 'org.jlleitschuh.gradle.ktlint' version "10.0.0"
+    id 'org.jlleitschuh.gradle.ktlint-idea' version "10.0.0"
+    id "com.github.sherter.google-java-format" version "0.9"
+}
+
+repositories {
+    mavenCentral()
+}
+
+group 'com.tabnine'
+version project.hasProperty('externalVersion') ? project.externalVersion : '1.39.0'
+
+sourceCompatibility = 9
+targetCompatibility = 9
+
+tasks.withType(KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "9"
+        freeCompilerArgs += "-Xjvm-default=enable"
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+apply plugin: "org.jlleitschuh.gradle.ktlint-idea"
+
+dependencies {
+    implementation project(':Common')
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.4.32")
+
+    testImplementation "org.hamcrest:hamcrest:2.2"
+    testImplementation 'org.mockito:mockito-core:5.2.0'
+    testImplementation 'org.mockito:mockito-inline:4.8.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:4.8.0'
+    testImplementation 'org.wiremock:wiremock-standalone:3.0.4'
+    testImplementation "io.mockk:mockk:1.11.0"
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.0'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.9.0'
+
+    constraints {
+        implementation('net.minidev:json-smart:2.4.9') {
+            because 'previous versions had a security bug, reported by snyk'
+        }
+    }
+}
+
+test {
+    useJUnitPlatform()
+    reports {
+        junitXml.enabled = true
+    }
+}
+
+def neededPlugins = project.hasProperty('testMode')  ? ['java'] : []
+
+intellij {
+    version = '2020.2'
+    type = 'IC'
+    updateSinceUntilBuild = false
+    pluginName = 'TabNine'
+    plugins = neededPlugins
+}
+
+def PRODUCTION_CHANNEL = null
+def channelName = project.hasProperty('channel') ? project.channel : 'alpha'
+def publishChannel = channelName == "production" ? PRODUCTION_CHANNEL : channelName
+
+def hubToken = project.hasProperty('hubToken') ? hubToken : (System.getenv('HUB_TOKEN'))
+
+test {
+    useJUnitPlatform()
+    reports {
+        junitXml.enabled = true
+    }
+}
+
+publishPlugin {
+    if (publishChannel != PRODUCTION_CHANNEL) {
+        channels = [publishChannel]
+    }
+}
+
+tasks.create("currentVersion") {
+    doLast {
+        println version
+    }
+}
+
+tasks.getByName("runIde").configure {
+    if (project.hasProperty('logFilePath')) {
+        systemProperty("TABNINE_LOG_FILE_PATH", logFilePath)
+    }
+}
+
+runIde {
+    environment("TABNINE_CHAT_DEV_SERVER_URL", "http://localhost:3000")
+}
+
+sourceSets {
+    main {
+        resources.srcDirs += "tabnineChat"
+    }
+}
+
+tasks {
+    compileKotlin {
+        dependsOn(ktlintFormat)
+    }
+}
+
+static def getIdeVersions(Project project) {
+    def ideVersions = project.hasProperty('ideVersions') ?
+            Arrays.asList(project.ideVersions.split(',')) :
+            ['IC-2020.2.1']
+    return ideVersions
+}
+
+runPluginVerifier {
+    ideVersions = getIdeVersions(project)
+    if (project.hasProperty("localPaths")) {
+        localPaths = Arrays.stream(project.localPaths.split(',')).map(File::new).collect(Collectors.toList())
+    }
+}
