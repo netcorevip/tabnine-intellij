@@ -101,6 +101,53 @@ tasks.getByName("runIde").configure {
         systemProperty("TABNINE_LOG_FILE_PATH", logFilePath)
     }
 }
+buildPlugin {
+    def agentDir
+    def chatDir
+    if (System.properties['os.name'].toLowerCase().contains('win')) {
+        // Windows
+        agentDir = "D:\\work\\0520\\proxy"
+        chatDir = ""
+    } else {
+        // macOS
+        agentDir = "$(Build.SourcesDirectory)/build/agent"
+        chatDir = "$(Build.SourcesDirectory)/build/chat"
+    }
+    println "-----buildPlugin >> 目录 ${agentDir} 里面的文件打包到插件zip/agent目录下 "
+    println "-----buildPlugin >> 目录 ${chatDir} 里面的文件打包到插件zip/chat目录下 "
+    from(
+            fileTree(agentDir) { include("*") },
+    ) {
+        into("agent/")
+    }
+    from(
+            fileTree(chatDir) { include("*") },
+    ) {
+        into("chat/")
+    }
+    duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+
+    doLast {
+        def pluginZip = buildPlugin.outputs.files.singleFile
+
+        def buildDir = zipTree(pluginZip).matching { exclude '**/lib/**' }
+        if (!buildDir.files) {
+            throw new GradleException("/agent and /chat 目录为空或不存在于插件压缩文件中！")
+        }
+        buildDir.files.each { file ->
+            def startIndex = file.path.indexOf('/agent/')
+            if (startIndex == -1) {
+                startIndex = file.path.indexOf('/chat/')
+            }
+            if (startIndex != -1) {
+                def subString = file.path.substring(startIndex)
+                println "--------目录：zip/ -->> ${subString} 文件存在！"
+            }
+        }
+        println "--------所有文件已打包到zip包！"
+    }
+
+}
 
 runIde {
     environment("TABNINE_CHAT_DEV_SERVER_URL", "http://localhost:3000")
